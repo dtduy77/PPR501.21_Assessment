@@ -90,18 +90,33 @@ Return ONLY the JSON data in the exact format specified above. Do not include an
 
     # Get the appropriate LLM based on provider
     if provider == "openai":
-        from langchain_openai import ChatOpenAI
+        # Check if using Azure OpenAI or regular OpenAI
+        azure_config = ModelConfig.get_azure_openai_config()
+        if azure_config["api_key"] and azure_config["endpoint"]:
+            # Use Azure OpenAI
+            from langchain_openai import AzureChatOpenAI
 
-        config = ModelConfig.get_openai_config()
-        llm = ChatOpenAI(
-            model=(
-                config["name"]
-                if config["name"] in ["gpt-4o", "gpt-4-vision-preview"]
-                else "gpt-4o"
-            ),
-            temperature=config["temperature"],
-            max_tokens=config["max_tokens"],
-        )
+            llm = AzureChatOpenAI(
+                azure_endpoint=azure_config["endpoint"],
+                azure_deployment=azure_config["deployment"],
+                api_version=azure_config["api_version"],
+                api_key=azure_config["api_key"],
+                temperature=0.0,
+            )
+        else:
+            # Use regular OpenAI
+            from langchain_openai import ChatOpenAI
+
+            config = ModelConfig.get_openai_config()
+            llm = ChatOpenAI(
+                model=(
+                    config["name"]
+                    if config["name"] in ["gpt-4o", "gpt-4-vision-preview"]
+                    else "gpt-4o"
+                ),
+                temperature=config["temperature"],
+                max_tokens=config["max_tokens"],
+            )
     elif provider == "google":
         from langchain_google_genai import ChatGoogleGenerativeAI
 

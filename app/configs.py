@@ -86,6 +86,13 @@ class ModelConfig:
     def check_openai_available(cls) -> bool:
         """Check if OpenAI is available (has API key and package)"""
         try:
+            # Check for Azure OpenAI first
+            azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
+            azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+            if azure_key and azure_endpoint:
+                return True
+
+            # Fallback to regular OpenAI
             api_key = os.environ.get("OPENAI_API_KEY")
             return api_key is not None and api_key.strip() != ""
         except Exception:
@@ -126,8 +133,23 @@ class ModelConfig:
         """Get API keys from environment"""
         return {
             "openai": os.environ.get("OPENAI_API_KEY"),
+            "azure_openai": os.environ.get("AZURE_OPENAI_API_KEY"),
+            "azure_endpoint": os.environ.get("AZURE_OPENAI_ENDPOINT"),
             "google": os.environ.get("GOOGLE_API_KEY")
             or os.environ.get("GEMINI_API_KEY"),
+        }
+
+    @classmethod
+    def get_azure_openai_config(cls) -> Dict[str, Any]:
+        """Get Azure OpenAI configuration"""
+        return {
+            "endpoint": os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
+            "api_key": os.environ.get("AZURE_OPENAI_API_KEY", ""),
+            "api_version": os.environ.get(
+                "AZURE_OPENAI_API_VERSION", "2024-12-01-preview"
+            ),
+            "deployment": os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o"),
+            "model_name": os.environ.get("AZURE_OPENAI_MODEL", "gpt-4o"),
         }
 
 
