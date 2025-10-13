@@ -48,8 +48,7 @@ def create_vision_chain(provider: str):
                         "text": """
 Phân tích hình ảnh hóa đơn/bill này và trích xuất dữ liệu có cấu trúc chi tiết cho tất cả các mặt hàng được tìm thấy.
 
-Thông tin file: {file_metadata}
-
+Cấu trúc output phải tuân theo mô hình Pydantic sau:
 {format_instructions}
 
 Đối với mỗi mặt hàng được tìm thấy trên hóa đơn, hãy trích xuất các thông tin sau:
@@ -135,7 +134,6 @@ def extract_from_image_with_langchain(image_path: str, provider: str) -> Dict[st
             result = chain.invoke(
                 {
                     "image_data": base64_image,
-                    "file_metadata": file_metadata,
                     "format_instructions": parser.get_format_instructions(),
                 }
             )

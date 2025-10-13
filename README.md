@@ -107,10 +107,10 @@ export GOOGLE_MODEL=gemini-2.5-flash
 
 ```bash
 # Run with uvicorn from project root (make sure you installed the requirements)
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
 # Or run directly with Python
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 5. Use the API:
