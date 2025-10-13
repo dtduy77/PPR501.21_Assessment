@@ -25,6 +25,18 @@ class Item(BaseModel):
 
 
 class ExtractionResult(BaseModel):
+    items: List[Item] = Field(description="List of extracted items from the receipt")
+    receipt_date: Optional[str] = Field(
+        default=None, description="Receipt date on the receipt. Format: DD/MM/YYYY"
+    )
+
+
+class ItemResponse(Item):
+    upload_time: Optional[str] = Field(
+        default=None, description="Upload time of the item"
+    )
+    receipt_date: Optional[str] = Field(
+        default=None, description="Receipt date on the receipt"
     items: List[Item] = Field(
         description="Danh sách các mặt hàng được trích xuất từ hóa đơn"
     )

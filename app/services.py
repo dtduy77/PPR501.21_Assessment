@@ -1,10 +1,10 @@
 import os
 import base64
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-
+from app.Repository.item_repository import create_item, get_items_by_date_range
 from .configs import ModelConfig
 from .models import ExtractionResult
 
@@ -208,3 +208,108 @@ def extract_from_image(path: str) -> dict:
             raise RuntimeError(
                 f"All LLM providers failed. Original error: {str(e)}"
             ) from e
+
+
+def save_items_to_db(result: dict):
+    items = result.get("items", [])
+    receipt_date = result.get("receipt_date")
+    formatted_receipt_date = None
+    if receipt_date:
+        try:
+            # Try full datetime first
+            formatted_receipt_date = datetime.strptime(
+                receipt_date, "%H:%M:%S %d-%m-%y"
+            ).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            try:
+                # Try date only (DD-MM-YY)
+                formatted_receipt_date = datetime.strptime(
+                    receipt_date, "%d-%m-%y"
+                ).strftime("%Y-%m-%d")
+            except Exception:
+                try:
+                    # Try date only (YYYY-MM-DD)
+                    formatted_receipt_date = datetime.strptime(
+                        receipt_date, "%Y-%m-%d"
+                    ).strftime("%Y-%m-%d")
+                except Exception:
+                    try:
+                        # Try DD/MM/YYYY format (common in receipts)
+                        formatted_receipt_date = datetime.strptime(
+                            receipt_date, "%d/%m/%Y"
+                        ).strftime("%Y-%m-%d")
+                    except Exception:
+                        try:
+                            # Try MM/DD/YYYY format
+                            formatted_receipt_date = datetime.strptime(
+                                receipt_date, "%m/%d/%Y"
+                            ).strftime("%Y-%m-%d")
+                        except Exception:
+                            print(f"Could not parse receipt_date: {receipt_date}")
+                            formatted_receipt_date = (
+                                None  # Set to None instead of invalid format
+                            )
+    else:
+        formatted_receipt_date = None
+    upload_time = result.get("upload_time")
+
+    # Convert upload_time to PostgreSQL timestamp format if needed
+    # Expected input: 'HH:MM:SS DD-MM-YY', output: 'YYYY-MM-DD HH:MM:SS'
+    formatted_upload_time = None
+    if upload_time:
+        try:
+            dt = datetime.strptime(upload_time, "%H:%M:%S %d-%m-%y")
+            formatted_upload_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            formatted_upload_time = upload_time  # fallback, may error in DB
+    else:
+        formatted_upload_time = None
+
+    for item in items:
+        create_item(
+            name=item.get("name"),
+            quantity=item.get("quantity"),
+            unit_price=item.get("unit_price"),
+            total_price=item.get("total_price"),
+            vat_percent=item.get("vat_percent"),
+            final_price=item.get("final_price"),
+            category=item.get("category"),
+            upload_time=formatted_upload_time,
+            receipt_date=formatted_receipt_date,
+        )
+
+
+def get_expenses_by_type_and_date(type: str, date: str):
+    """
+    Calculate date range and return items for day, month, or year.
+    - type: 'day', 'month', or 'year'
+    - date: 'YYYY-MM-DD'
+    """
+    print(f"Calculating expenses for type: {type}, date: {date}")
+    dt = datetime.strptime(date, "%Y-%m-%d")
+    if type == "day":
+        start_date = dt.strftime("%Y-%m-%d")
+        end_date = dt.strftime("%Y-%m-%d")
+    elif type == "month":
+        start_date = dt.replace(day=1).strftime("%Y-%m-%d")
+        # Find last day of month
+        if dt.month == 12:
+            next_month = dt.replace(year=dt.year + 1, month=1, day=1)
+        else:
+            next_month = dt.replace(month=dt.month + 1, day=1)
+        end_date = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
+    elif type == "year":
+        start_date = dt.replace(month=1, day=1).strftime("%Y-%m-%d")
+        end_date = dt.replace(month=12, day=31).strftime("%Y-%m-%d")
+    else:
+        raise ValueError("Invalid type")
+
+    items = get_items_by_date_range(start_date, end_date)
+    return {
+        "type": type,
+        "date": date,
+        "start_date": start_date,
+        "end_date": end_date,
+        "count": len(items),
+        "items": [item.dict() for item in items],
+    }

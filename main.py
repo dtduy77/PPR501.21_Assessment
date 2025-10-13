@@ -1,13 +1,14 @@
 import os
 import tempfile
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from typing import Dict, Any
 import uvicorn
 
 from app.models import ExtractionResult
-from app.services import extract_from_image_with_langchain
+from app.services import extract_from_image_with_langchain, get_expenses_by_type_and_date, save_items_to_db
 from app.configs import get_model_config
+from app.database import init_database
 
 app = FastAPI(
     title="Bill Extraction API",
@@ -46,7 +47,8 @@ async def extract_bill(file: UploadFile = File(...)):
         # Get provider from environment (configs.py will handle detection)
         config = get_model_config()
         result = extract_from_image_with_langchain(tmp_path, config.provider)
-
+        print(f"aaaaaaaaaaa- {result}")
+        save_items_to_db(result)
         return {
             "success": True,
             "data": result,
@@ -62,6 +64,21 @@ async def extract_bill(file: UploadFile = File(...)):
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+
+@app.get("/expenses")
+async def get_expenses(type: str = Query(..., regex="^(day|month|year)$"), date: str = Query(...)):
+    """
+    Query expenses by day, month, or year.
+    - **type**: 'day', 'month', or 'year'
+    - **date**: date string in 'YYYY-MM-DD' format
+    """
+    try:
+        print(f"Querying expenses for type: {type}, date: {date}")
+        result = get_expenses_by_type_and_date(type, date)
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
 
 @app.get("/")
