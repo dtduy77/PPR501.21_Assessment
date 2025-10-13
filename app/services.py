@@ -210,7 +210,8 @@ def extract_from_image(path: str) -> dict:
             raise RuntimeError(
                 f"All LLM providers failed. Original error: {str(e)}"
             ) from e
-        
+
+
 def save_items_to_db(result: dict):
     items = result.get("items", [])
     receipt_date = result.get("receipt_date")
@@ -218,17 +219,38 @@ def save_items_to_db(result: dict):
     if receipt_date:
         try:
             # Try full datetime first
-            formatted_receipt_date = datetime.strptime(receipt_date, "%H:%M:%S %d-%m-%y").strftime("%Y-%m-%d %H:%M:%S")
+            formatted_receipt_date = datetime.strptime(
+                receipt_date, "%H:%M:%S %d-%m-%y"
+            ).strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
             try:
                 # Try date only (DD-MM-YY)
-                formatted_receipt_date = datetime.strptime(receipt_date, "%d-%m-%y").strftime("%Y-%m-%d")
+                formatted_receipt_date = datetime.strptime(
+                    receipt_date, "%d-%m-%y"
+                ).strftime("%Y-%m-%d")
             except Exception:
                 try:
                     # Try date only (YYYY-MM-DD)
-                    formatted_receipt_date = datetime.strptime(receipt_date, "%Y-%m-%d").strftime("%Y-%m-%d")
+                    formatted_receipt_date = datetime.strptime(
+                        receipt_date, "%Y-%m-%d"
+                    ).strftime("%Y-%m-%d")
                 except Exception:
-                    formatted_receipt_date = receipt_date  # fallback, may error in DB
+                    try:
+                        # Try DD/MM/YYYY format (common in receipts)
+                        formatted_receipt_date = datetime.strptime(
+                            receipt_date, "%d/%m/%Y"
+                        ).strftime("%Y-%m-%d")
+                    except Exception:
+                        try:
+                            # Try MM/DD/YYYY format
+                            formatted_receipt_date = datetime.strptime(
+                                receipt_date, "%m/%d/%Y"
+                            ).strftime("%Y-%m-%d")
+                        except Exception:
+                            print(f"Could not parse receipt_date: {receipt_date}")
+                            formatted_receipt_date = (
+                                None  # Set to None instead of invalid format
+                            )
     else:
         formatted_receipt_date = None
     upload_time = result.get("upload_time")
@@ -255,8 +277,9 @@ def save_items_to_db(result: dict):
             final_price=item.get("final_price"),
             category=item.get("category"),
             upload_time=formatted_upload_time,
-            receipt_date=formatted_receipt_date
+            receipt_date=formatted_receipt_date,
         )
+
 
 def get_expenses_by_type_and_date(type: str, date: str):
     """
@@ -273,9 +296,9 @@ def get_expenses_by_type_and_date(type: str, date: str):
         start_date = dt.replace(day=1).strftime("%Y-%m-%d")
         # Find last day of month
         if dt.month == 12:
-            next_month = dt.replace(year=dt.year+1, month=1, day=1)
+            next_month = dt.replace(year=dt.year + 1, month=1, day=1)
         else:
-            next_month = dt.replace(month=dt.month+1, day=1)
+            next_month = dt.replace(month=dt.month + 1, day=1)
         end_date = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
     elif type == "year":
         start_date = dt.replace(month=1, day=1).strftime("%Y-%m-%d")
@@ -290,5 +313,5 @@ def get_expenses_by_type_and_date(type: str, date: str):
         "start_date": start_date,
         "end_date": end_date,
         "count": len(items),
-        "items": [item.dict() for item in items]
+        "items": [item.dict() for item in items],
     }
