@@ -8,12 +8,12 @@ def init_session_state():
 
 def render_sidebar():
     with st.sidebar:
-        st.title("📊 Expense Tracker")
+        st.title("Expense Tracker")
         st.markdown("---")
 
    
-        st.page_link("app.py", label="📊 Dashboard", icon="🏠")
-        st.page_link("pages/add_expense.py", label="➕ Add Expense", icon="➕")
+        st.page_link("app.py", label="Dashboard", icon="📊")
+        st.page_link("pages/add_expense.py", label="Add Expense", icon="➕")
 
 
         st.markdown("---")

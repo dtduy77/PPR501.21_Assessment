@@ -92,7 +92,7 @@ with tab1:
                                     st.balloons()
                                     st.rerun()
                         else:
-                            st.error(f"❌ API error {resp.status_code}")
+                            st.error(f"API error {resp.status_code}")
 
 # ========== TAB 2 ==========
 with tab2:
@@ -115,10 +115,10 @@ with tab2:
                     'Amount': [amount]
                 })
                 st.session_state.expenses = pd.concat([st.session_state.expenses, new_expense], ignore_index=True)
-                st.success(f"✅ Added {category} expense: ${amount:.2f}")
+                st.success(f"Added {category} expense: ${amount:.2f}")
                 st.rerun()
             else:
-                st.error("❌ Please enter an amount greater than 0")
+                st.error("Please enter an amount greater than 0")
 
 # ========== TAB 3 ==========
 with tab3:
@@ -143,7 +143,7 @@ with tab3:
         mock_amounts = np.random.randint(20, 500, size=num_records) + np.random.random(num_records)
         mock_df = pd.DataFrame({'Date': mock_dates, 'Category': mock_categories, 'Description': mock_descriptions, 'Amount': mock_amounts})
         st.session_state.expenses = pd.concat([st.session_state.expenses, mock_df], ignore_index=True)
-        st.success(f"✅ Generated {num_records} sample records!")
+        st.success(f"Generated {num_records} sample records!")
         st.balloons()
         st.rerun()
 
