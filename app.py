@@ -4,131 +4,163 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime, timedelta
+from typing import List
+import os
+from dotenv import load_dotenv
+from sidebar import init_session_state, render_sidebar
+import requests
+import json
+
+# Load environment variables
+load_dotenv()
 
 # Page configuration
-st.set_page_config(page_title="Expense Tracker", layout="wide")
+st.set_page_config(page_title="Expense Tracker", layout="wide", page_icon="📊")
 
-# Initialize session state for storing expenses
-if 'expenses' not in st.session_state:
-    st.session_state.expenses = pd.DataFrame(columns=['Date', 'Category', 'Description', 'Amount'])
+# Initialize session state
+init_session_state()
+
+# Category mapping from API to display names
+CATEGORY_MAPPING = {
+    "food": "Food",
+    "coffee": "Coffee & Drinks",
+    "transport": "Transport",
+    "shopping": "Shopping",
+    "other": "Other"
+}
+
+# Function to convert API response to DataFrame
+def convert_api_data_to_dataframe(items: List[dict]) -> pd.DataFrame:
+    """Convert list of ItemResponse objects to DataFrame"""
+    if not items or not isinstance(items, list):
+        return pd.DataFrame(columns=['Date', 'Category', 'Description', 'Amount', 'Quantity', 'UnitPrice', 'VAT'])
+    
+    records = []
+    for item in items:
+        if not isinstance(item, dict):
+            st.warning(f"Skipping invalid item: {item} (expected dictionary)")
+            continue
+        
+        # Use receipt_date if available, otherwise use upload_time, fallback to today
+        date_str = item.get('receipt_date') or item.get('upload_time')
+        if date_str:
+            try:
+                # Try parsing DD/MM/YYYY format or fallback to YYYY-MM-DD
+                if '/' in date_str:
+                    date = datetime.strptime(date_str, '%d/%m/%Y')
+                else:
+                    date = pd.to_datetime(date_str)
+            except:
+                date = datetime.now()
+        else:
+            date = datetime.now()
+        
+        records.append({
+            'Date': date,
+            'Category': CATEGORY_MAPPING.get(item.get('category', 'other'), 'Other'),
+            'Description': item.get('name', 'Unknown Item'),
+            'Amount': item.get('final_price') or item.get('total_price') or item.get('unit_price', 0),
+            'Quantity': item.get('quantity'),
+            'UnitPrice': item.get('unit_price'),
+            'VAT': item.get('vat_percent')
+        })
+    
+    return pd.DataFrame(records)
+
+# Fetch data from API
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def fetch_expenses_from_api(api_base_url: str, date_type: str, date: str):
+    """Fetch expenses from the API"""
+    try:
+        response = requests.get(
+            f"{api_base_url}/expenses",
+            params={"type": date_type, "date": date},
+            timeout=10
+        )
+        if response.status_code == 200:
+            # Ensure the response is parsed as JSON
+            data = response.json()
+            if isinstance(data, dict) and 'items' in data:
+                return data.get('items', [])
+            return data if isinstance(data, list) else []
+        else:
+            st.error(f"Failed to fetch data from API: {response.status_code} - {response.text}")
+            return []
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error connecting to API: {str(e)}")
+        return []
+    except json.JSONDecodeError as e:
+        st.error(f"Invalid JSON response from API: {str(e)}")
+        return []
+
+# API Configuration - Load from .env file
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # Title
 st.title("Expense Tracker Dashboard")
-st.markdown("Track and visualize your spending patterns")
+st.markdown("Track and visualize your spending patterns from receipt data")
 
-# Sidebar for data management
-with st.sidebar:
-    st.header("📊 Data Management")
-    
-    # File upload section
-    st.subheader("📁 Upload File")
-    uploaded_file = st.file_uploader("Upload CSV or Excel file", type=['csv', 'xlsx', 'xls'])
-    
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.endswith('.csv'):
-                df_upload = pd.read_csv(uploaded_file)
-            else:
-                df_upload = pd.read_excel(uploaded_file)
-            
-            st.write("Preview:")
-            st.dataframe(df_upload.head(3))
-            
-            if st.button("Add to Expenses"):
-                if 'Date' in df_upload.columns:
-                    df_upload['Date'] = pd.to_datetime(df_upload['Date'])
-                st.session_state.expenses = pd.concat([st.session_state.expenses, df_upload], ignore_index=True)
-                st.success(f"✅ Added {len(df_upload)} expenses!")
-                st.rerun()
-        except Exception as e:
-            st.error(f"Error: {e}")
-    
-    st.divider()
-    
-    # Manual entry section
-    st.subheader("✍️ Manual Entry")
-    with st.form("manual_entry"):
-        entry_date = st.date_input("Date", datetime.now())
-        category = st.selectbox("Category", ["Food", "Transport", "Shopping", "Bills", "Entertainment", "Health", "Other"])
-        description = st.text_input("Description")
-        amount = st.number_input("Amount", min_value=0.0, step=0.01)
-        
-        if st.form_submit_button("Add Expense"):
-            new_expense = pd.DataFrame({
-                'Date': [pd.to_datetime(entry_date)],
-                'Category': [category],
-                'Description': [description],
-                'Amount': [amount]
-            })
-            st.session_state.expenses = pd.concat([st.session_state.expenses, new_expense], ignore_index=True)
-            st.success("Expense added!")
-            st.rerun()
-    
-    st.divider()
-    
-    # Mock data button
-    if st.button("✨ Generate Sample Data"):
-        np.random.seed(42)
-        start_date = datetime(2024, 1, 1)
-        end_date = datetime(2025, 10, 10)
-        days = (end_date - start_date).days
-        num_records = 200
+# Render sidebar
+render_sidebar()
 
-        mock_dates = [start_date + timedelta(days=np.random.randint(0, days)) for _ in range(num_records)]
-        mock_categories = np.random.choice(
-            ["Food", "Transport", "Shopping", "Bills", "Entertainment", "Health", "Other"],
-            size=num_records
-        )
-        mock_descriptions = [f"{cat} expense #{i}" for i, cat in enumerate(mock_categories)]
-        mock_amounts = np.random.randint(20, 500, size=num_records) + np.random.random(num_records)
+# API Filter Section
+st.subheader("🔍 Data Filters")
+col1, col2 = st.columns(2)
 
-        mock_df = pd.DataFrame({
-            'Date': mock_dates,
-            'Category': mock_categories,
-            'Description': mock_descriptions,
-            'Amount': mock_amounts
-        })
-
-        st.session_state.expenses = pd.concat([st.session_state.expenses, mock_df], ignore_index=True)
-        st.success(f"✅ Generated {num_records} sample records!")
-        st.rerun()
-    
-    st.divider()
-    
-    # Download and clear options
-    if not st.session_state.expenses.empty:
-        csv = st.session_state.expenses.to_csv(index=False)
-        st.download_button("📥 Download Data", csv, "expenses.csv", "text/csv")
-        
-        if st.button("🗑️ Clear All Data"):
-            st.session_state.expenses = pd.DataFrame(columns=['Date', 'Category', 'Description', 'Amount'])
-            st.rerun()
-
-# Auto generate sample data if empty
-if st.session_state.expenses.empty:
-    np.random.seed(42)
-    start_date = datetime(2024, 1, 1)
-    end_date = datetime(2025, 10, 10)
-    days = (end_date - start_date).days
-    num_records = 150
-
-    mock_dates = [start_date + timedelta(days=np.random.randint(0, days)) for _ in range(num_records)]
-    mock_categories = np.random.choice(
-        ["Food", "Transport", "Shopping", "Bills", "Entertainment", "Health", "Other"],
-        size=num_records
+with col1:
+    # Use last fetch type or default to year
+    date_type = st.selectbox(
+        "Query Type", 
+        ["day", "month", "year"], 
+        index=["day", "month", "year"].index(st.session_state.get('last_fetch_type', 'year'))
     )
-    mock_descriptions = [f"{cat} expense #{i}" for i, cat in enumerate(mock_categories)]
-    mock_amounts = np.random.randint(20, 500, size=num_records) + np.random.random(num_records)
 
-    mock_df = pd.DataFrame({
-        'Date': mock_dates,
-        'Category': mock_categories,
-        'Description': mock_descriptions,
-        'Amount': mock_amounts
-    })
+with col2:
+    today = datetime.now().date()
+    # Use last fetch date if available and matches type, otherwise default
+    if st.session_state.get('last_fetch_date'):
+        try:
+            last_date = datetime.strptime(st.session_state.last_fetch_date, "%Y-%m-%d").date()
+            if date_type == "year" and last_date.year == today.year:
+                default_date = last_date
+            else:
+                default_date = today
+        except:
+            default_date = today
+    else:
+        default_date = today
+    
+    date_input = st.date_input("Date", value=default_date)
 
-    st.session_state.expenses = mock_df
-    st.info("🌱 No data found — sample data generated for demo!")
+# Check if we need to refresh data based on filter changes
+needs_refresh = (
+    st.session_state.get('last_fetch_type') != date_type or 
+    st.session_state.get('last_fetch_date') != date_input.strftime("%Y-%m-%d") or
+    st.button("🔄 Refresh Data")
+)
+
+if needs_refresh:
+    # Validate date format
+    try:
+        selected_date = date_input.strftime("%Y-%m-%d")
+    except ValueError:
+        st.error("Invalid date format. Please use YYYY-MM-DD (e.g., 2025-10-14).")
+        st.stop()
+    
+    with st.spinner(f"Fetching data for {date_type}: {selected_date}..."):
+        api_data = fetch_expenses_from_api(API_BASE_URL, date_type, selected_date)
+        if api_data:
+            st.session_state.expenses = convert_api_data_to_dataframe(api_data)
+            # Store the current filters in session state
+            st.session_state.last_fetch_type = date_type
+            st.session_state.last_fetch_date = selected_date
+            st.success(f"Data refreshed for {date_type}: {selected_date}")
+        else:
+            st.session_state.expenses = pd.DataFrame(columns=['Date', 'Category', 'Description', 'Amount', 'Quantity', 'UnitPrice', 'VAT'])
+            st.warning("No data returned from API. Check your filters and API connection.")
+    
+    # Rerun to update the display
+    st.rerun()
 
 # Prepare data
 df_all = st.session_state.expenses.copy()
@@ -137,223 +169,197 @@ df_all['Year'] = df_all['Date'].dt.year
 df_all['Month'] = df_all['Date'].dt.to_period('M').astype(str)
 df_all['Day'] = df_all['Date'].dt.date
 
-# Filter Section
-st.subheader("🔍 Filters")
-col1, col2, col3, col4, col5 = st.columns(5)
-
-with col1:
-    view_mode = st.selectbox("📊 View By", ["Daily", "Monthly", "Yearly"])
-
-with col2:
-    years = sorted(df_all['Year'].unique(), reverse=True)
-    selected_year = st.selectbox("Year", ["All"] + years)
-
-with col3:
-    if selected_year != "All":
-        months = sorted(df_all[df_all['Year'] == selected_year]['Month'].unique(), reverse=True)
-    else:
-        months = sorted(df_all['Month'].unique(), reverse=True)
-    selected_month = st.selectbox("Month", ["All"] + months)
-
-with col4:
-    if selected_month != "All":
-        days = sorted(df_all[df_all['Month'] == selected_month]['Day'].unique(), reverse=True)
-    else:
-        days = sorted(df_all['Day'].unique(), reverse=True)
-    selected_day = st.selectbox("Day", ["All"] + days)
-
-with col5:
-    categories = sorted(df_all['Category'].unique())
-    selected_category = st.selectbox("Category", ["All"] + categories)
-
-# Apply filters
-df = df_all.copy()
-if selected_year != "All":
-    df = df[df['Year'] == selected_year]
-if selected_month != "All":
-    df = df[df['Month'] == selected_month]
-if selected_day != "All":
-    df = df[df['Day'] == selected_day]
-if selected_category != "All":
-    df = df[df['Category'] == selected_category]
-
-# Show filter info
-filter_info = []
-if selected_year != "All":
-    filter_info.append(f"Year: {selected_year}")
-if selected_month != "All":
-    filter_info.append(f"Month: {selected_month}")
-if selected_day != "All":
-    filter_info.append(f"Day: {selected_day}")
-if selected_category != "All":
-    filter_info.append(f"Category: {selected_category}")
-
-if filter_info:
-    st.info(f"📌 Active Filters: {' | '.join(filter_info)} | Records: {len(df)}")
-else:
-    st.info(f"📊 Showing all data | Records: {len(df)}")
+# Show filter info based on API filters
+filter_info = [f"Type: {date_type}", f"Date: {date_input}"]
+st.info(f"📌 Active Filters: {' | '.join(filter_info)} | Records: {len(df_all)}")
 
 st.divider()
 
-# Check if filtered data is empty
-if df.empty:
-    st.warning("⚠️ No data matches the selected filters. Please adjust your filter criteria.")
+# Check if data is empty
+if df_all.empty:
+    st.warning("No data available. Please adjust your filter criteria.")
     st.stop()
 
 # Key metrics
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    total_expense = df['Amount'].sum()
-    st.metric("💰 Total Expenses", f"${total_expense:,.2f}")
+    total_expense = df_all['Amount'].sum()
+    st.metric("💰 Total Expenses", f"{total_expense:,.3f} VND")
 with col2:
-    avg_expense = df['Amount'].mean()
-    st.metric("📊 Average Transaction", f"${avg_expense:,.2f}")
+    avg_expense = df_all['Amount'].mean()
+    st.metric("📊 Average Transaction", f"{avg_expense:,.3f} VND")
 with col3:
-    st.metric("🧾 Total Transactions", len(df))
+    st.metric("🧾 Total Transactions", len(df_all))
 with col4:
-    if not df.empty:
-        top_category = df.groupby('Category')['Amount'].sum().idxmax()
+    if not df_all.empty:
+        top_category = df_all.groupby('Category')['Amount'].sum().idxmax()
         st.metric("🏆 Top Category", top_category)
 
 st.divider()
 
-# Main Charts Section
-if view_mode == "Daily":
-    # Daily view
-    daily_data = df.groupby('Day')['Amount'].sum().reset_index()
-    daily_data.columns = ['Date', 'Amount']
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        fig1 = go.Figure()
-        fig1.add_trace(go.Scatter(
-            x=daily_data['Date'],
-            y=daily_data['Amount'],
-            mode='lines+markers',
-            name='Daily Spending',
-            fill='tozeroy',
-            line=dict(color='#1f77b4', width=3),
-            fillcolor='rgba(31, 119, 180, 0.3)',
-            marker=dict(size=8)
-        ))
-        fig1.update_layout(
-            title=f"📅 Daily Spending Trend ({len(daily_data)} days)",
-            xaxis_title="Date",
-            yaxis_title="Amount ($)",
-            hovermode='x unified',
-            template='plotly_white',
-            height=500
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-    
-    with col2:
-        category_data = df.groupby('Category')['Amount'].sum().reset_index()
-        fig2 = go.Figure(data=[go.Pie(
-            labels=category_data['Category'],
-            values=category_data['Amount'],
-            hole=0.4,
-            marker=dict(line=dict(color='white', width=2))
-        )])
-        fig2.update_layout(
-            title=f"🎯 Spending by Category",
-            template='plotly_white',
-            height=500
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+st.subheader("📊 Spending Analysis")
 
-elif view_mode == "Monthly":
-    # Monthly view
-    monthly_data = df.groupby('Month')['Amount'].sum().reset_index()
-    monthly_data.columns = ['Month', 'Amount']
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        fig1 = go.Figure()
-        fig1.add_trace(go.Bar(
-            x=monthly_data['Month'],
-            y=monthly_data['Amount'],
-            marker=dict(
-                color=monthly_data['Amount'],
-                colorscale='Viridis',
-                showscale=True,
-                colorbar=dict(title="Amount ($)")
+# Create dynamic grouping based on date_type filter
+if date_type == "day":
+    # For daily data - show hourly or category breakdown within the day
+    if not df_all.empty:
+        df_all['Hour'] = df_all['Date'].dt.hour
+        time_group = df_all.groupby('Hour')['Amount'].sum().reset_index()
+        time_group.columns = ['Hour', 'Amount']
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Bar chart: Spending by hour of day
+            fig1 = px.bar(
+                time_group, 
+                x='Hour', 
+                y='Amount',
+                title=f"⏰ Spending by Hour ({date_input})",
+                labels={'Hour': 'Hour of Day', 'Amount': 'Amount (VND)'},
+                color='Amount',
+                color_continuous_scale='Viridis'
             )
-        ))
-        fig1.update_layout(
-            title=f"📆 Monthly Spending ({len(monthly_data)} months)",
-            xaxis_title="Month",
-            yaxis_title="Amount ($)",
-            template='plotly_white',
-            height=500
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-    
-    with col2:
-        category_data = df.groupby('Category')['Amount'].sum().reset_index()
-        fig2 = go.Figure(data=[go.Pie(
-            labels=category_data['Category'],
-            values=category_data['Amount'],
-            hole=0.4,
-            marker=dict(line=dict(color='white', width=2))
-        )])
-        fig2.update_layout(
-            title=f"🎯 Spending by Category",
-            template='plotly_white',
-            height=500
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+            fig1.update_layout(
+                template='plotly_white',
+                height=500,
+                xaxis=dict(tickmode='linear', dtick=1)
+            )
+            plotly_config = {
+                'width': 'stretch'
+            }
+            st.plotly_chart(fig1, config=plotly_config)
+        
+        with col2:
+            category_data = df_all.groupby('Category')['Amount'].sum().reset_index()
+            fig2 = go.Figure(data=[go.Pie(
+                labels=category_data['Category'],
+                values=category_data['Amount'],
+                hole=0.4,
+                marker=dict(line=dict(color='white', width=2))
+            )])
+            fig2.update_layout(
+                title=f"🎯 Spending by Category",
+                template='plotly_white',
+                height=500
+            )
+            plotly_config = {
+                'width': 'stretch'
+            }
+            st.plotly_chart(fig2, config=plotly_config)
 
-else:  # Yearly
-    # Yearly view
-    yearly_data = df.groupby('Year')['Amount'].sum().reset_index()
-    yearly_data.columns = ['Year', 'Amount']
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        fig1 = go.Figure()
-        fig1.add_trace(go.Bar(
-            x=yearly_data['Year'],
-            y=yearly_data['Amount'],
-            marker=dict(
-                color=yearly_data['Amount'],
-                colorscale='Plasma',
-                showscale=True,
-                colorbar=dict(title="Amount ($)")
-            ),
-            text=yearly_data['Amount'].apply(lambda x: f"${x:,.0f}"),
-            textposition='outside'
-        ))
-        fig1.update_layout(
-            title=f"🗓️ Yearly Spending ({len(yearly_data)} years)",
-            xaxis_title="Year",
-            yaxis_title="Amount ($)",
-            template='plotly_white',
-            height=500
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-    
-    with col2:
-        category_data = df.groupby('Category')['Amount'].sum().reset_index()
-        fig2 = go.Figure(data=[go.Pie(
-            labels=category_data['Category'],
-            values=category_data['Amount'],
-            hole=0.4,
-            marker=dict(line=dict(color='white', width=2))
-        )])
-        fig2.update_layout(
-            title=f"🎯 Spending by Category",
-            template='plotly_white',
-            height=500
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+elif date_type == "month":
+    # For monthly data - show daily breakdown within the month
+    if not df_all.empty:
+        # Extract day from date for monthly view
+        df_all['DayOfMonth'] = df_all['Date'].dt.day
+        daily_monthly = df_all.groupby('DayOfMonth')['Amount'].sum().reset_index()
+        daily_monthly.columns = ['Day', 'Amount']
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Bar chart: Daily spending within the selected month
+            fig1 = px.bar(
+                daily_monthly,
+                x='Day',
+                y='Amount',
+                title=f"📅 Daily Spending - {date_input}",
+                labels={'Day': 'Day of Month', 'Amount': 'Amount (VND)'},
+                color='Amount',
+                color_continuous_scale='Blues'
+            )
+            fig1.update_layout(
+                template='plotly_white',
+                height=500,
+                xaxis=dict(tickmode='linear', dtick=1)
+            )
+            plotly_config = {
+                'width': 'stretch'
+            }
+            st.plotly_chart(fig1, config=plotly_config)
+        
+        with col2:
+            category_data = df_all.groupby('Category')['Amount'].sum().reset_index()
+            fig2 = go.Figure(data=[go.Pie(
+                labels=category_data['Category'],
+                values=category_data['Amount'],
+                hole=0.4,
+                marker=dict(line=dict(color='white', width=2))
+            )])
+            fig2.update_layout(
+                title=f"🎯 Spending by Category",
+                template='plotly_white',
+                height=500
+            )
+            plotly_config = {
+                'width': 'stretch'
+            }
+            st.plotly_chart(fig2, config=plotly_config)
 
-# Data table
-st.subheader(f"📋 Transaction Details ({len(df)} records)")
+elif date_type == "year":
+    # For yearly data - show monthly breakdown within the year
+    if not df_all.empty:
+        monthly_yearly = df_all.groupby('Month')['Amount'].sum().reset_index()
+        monthly_yearly.columns = ['Month', 'Amount']
+        
+        # Parse month for better display
+        monthly_yearly['MonthDisplay'] = pd.to_datetime(monthly_yearly['Month'] + '-01').dt.strftime('%b %Y')
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Bar chart: Monthly spending within the selected year
+            fig1 = px.bar(
+                monthly_yearly,
+                x='MonthDisplay',
+                y='Amount',
+                title=f"📆 Monthly Spending - {date_input}",
+                labels={'Amount': 'Amount (VND)', 'MonthDisplay': 'Month'},
+                color='Amount',
+                color_continuous_scale='Reds'
+            )
+            fig1.update_layout(
+                template='plotly_white',
+                height=500,
+                xaxis_tickangle=45
+            )
+            plotly_config = {
+                'width': 'stretch'
+            }
+            st.plotly_chart(fig1, config=plotly_config)
+        
+        with col2:
+            category_data = df_all.groupby('Category')['Amount'].sum().reset_index()
+            fig2 = go.Figure(data=[go.Pie(
+                labels=category_data['Category'],
+                values=category_data['Amount'],
+                hole=0.4,
+                marker=dict(line=dict(color='white', width=2))
+            )])
+            fig2.update_layout(
+                title=f"🎯 Spending by Category",
+                template='plotly_white',
+                height=500
+            )
+            plotly_config = {
+                'width': 'stretch'
+            }
+            st.plotly_chart(fig2, config=plotly_config)
+
+# Data table with additional details
+st.subheader(f"📋 Transaction Details ({len(df_all)} records)")
+
+# Create display dataframe with more details
+display_df = df_all[['Date', 'Category', 'Description', 'Quantity', 'UnitPrice', 'VAT', 'Amount']].copy()
+display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
+display_df['Quantity'] = display_df['Quantity'].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "-")
+display_df['UnitPrice'] = display_df['UnitPrice'].apply(lambda x: f"{x:.3f} VND" if pd.notna(x) else "-")
+display_df['VAT'] = display_df['VAT'].apply(lambda x: f"{x:.0f}%" if pd.notna(x) else "-")
+display_df['Amount'] = display_df['Amount'].apply(lambda x: f"{x:.3f} VND")
+
 st.dataframe(
-    df[['Date', 'Category', 'Description', 'Amount']].sort_values('Date', ascending=False),
-    use_container_width=True,
+    display_df.sort_values('Date', ascending=False),
+    width='stretch',
     height=400
 )
