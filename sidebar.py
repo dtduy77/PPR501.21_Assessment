@@ -17,19 +17,14 @@ def render_sidebar():
 
 
         st.markdown("---")
-        st.subheader("📁 Data Management")
 
         if not st.session_state.expenses.empty:
-            st.metric("Total Records", len(st.session_state.expenses))
-            st.metric("Total Amount", f"${st.session_state.expenses['Amount'].sum():,.2f}")
-            
-            st.markdown("---")
-            
+
+        
             csv = st.session_state.expenses.to_csv(index=False)
             st.download_button("📥 Download Data", csv, "expenses.csv", "text/csv", use_container_width=True)
             
             if st.button("🗑️ Clear All Data", use_container_width=True):
                 st.session_state.expenses = pd.DataFrame(columns=['Date', 'Category', 'Description', 'Amount'])
                 st.rerun()
-        else:
-            st.info("No data available")
+       
