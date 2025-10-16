@@ -59,17 +59,26 @@ CÁC TRƯỜNG BẮT BUỘC:
 
 CÁC TRƯỜNG TÙY CHỌN (trích xuất nếu nhìn thấy trên hóa đơn):
 - quantity: Số lượng mặt hàng đã mua (nếu có hiển thị, ví dụ: "2x", "3 cái")
-- unit_price: Giá cho từng mặt hàng riêng lẻ (trước VAT nếu có)
-- total_price: Tổng giá cho mặt hàng này (quantity × unit_price, trước VAT)
+- unit_price: Giá cho từng mặt hàng riêng lẻ (đơn vị: VND, trước VAT nếu có)
+- total_price: Tổng giá cho mặt hàng này (đơn vị: VND, quantity × unit_price, trước VAT)
 - vat_percent: Phần trăm VAT/thuế cho mặt hàng này (ví dụ: 10.0 cho 10%)
-- final_price: Giá cuối cùng bao gồm VAT/thuế (total_price + VAT)
+- final_price: Giá cuối cùng bao gồm VAT/thuế (đơn vị: VND)
 
-HƯỚNG DẪN QUAN TRỌNG:
+HƯỚNG DẪN XỬ LÝ GIÁ CẢ VND:
 1. Trích xuất TẤT CẢ các mặt hàng nhìn thấy trên hóa đơn, ngay cả khi thiếu một số thông tin giá
 2. Nếu một trường không nhìn thấy hoặc không rõ ràng, đặt thành null (không phải 0)
-3. Đối với giá cả, chỉ sử dụng số (không có ký hiệu tiền tệ)
+3. Đối với giá cả bằng VND:
+   - Loại bỏ tất cả ký hiệu tiền tệ (VND, đ, VNĐ, ₫)
+   - Loại bỏ dấu phân cách hàng nghìn (dấu chấm hoặc dấu phẩy)
+   - Chỉ giữ lại số nguyên (ví dụ: "25.000 VND" → 25000, "15,500đ" → 15500)
+   - Nếu giá có đơn vị khác (USD, EUR), convert sang VND nếu có thể, nếu không thì giữ nguyên
 4. Đối với phần trăm VAT, sử dụng định dạng thập phân (ví dụ: 10.0 cho 10%)
-5. Phân loại mặt hàng một cách phù hợp:
+5. Đặc biệt chú ý các định dạng giá Việt Nam:
+   - "25.000" hoặc "25,000" = 25000 VND
+   - "1.250.000" = 1250000 VND
+   - "50K" = 50000 VND
+   - "2tr" hoặc "2 triệu" = 2000000 VND
+6. Phân loại mặt hàng một cách phù hợp:
    - food: bữa ăn, đồ ăn nhẹ, thực phẩm, món ăn nhà hàng
    - coffee: cà phê, trà, đồ uống từ quán cafe
    - transport: taxi, xe buýt, tàu hỏa, đỗ xe, xăng dầu
@@ -142,7 +151,6 @@ def extract_from_image_with_langchain(image_path: str, provider: str) -> Dict[st
 
         # Encode image and get metadata
         base64_image = encode_image_to_base64(image_path)
-        file_metadata = get_file_metadata(image_path)
 
         # Run the chain with error handling
         try:
